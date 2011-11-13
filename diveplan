@@ -1,12 +1,12 @@
-#!perl
+#!perl -w
 
                     ########################
                     #                      #
                     # DIVE PLAN CALCULATOR #
                     #                      #
-                    #    Version 1.1.1     #
+                    #    Version 1.2.0     #
                     #                      #
-                    #  Relased 2011-11-09  #
+                    #  Relased 2011-11-12  #
                     #                      #
                     #      under the       #
                     #  GNU General Public  #
@@ -35,9 +35,9 @@ use strict;
 #                           #
 #############################
 
-my $max_depth = 25; # meter
+my $max_depth = 24; # meter
 
-my $bottom_time = 25; # minute
+my $bottom_time = 23; # minute
 #my $bottom_time = 10; # minute
 
 my $includes_descent = 1; # non-zero => bottom time includes time for descent, zero => bottom time is time actually spent at max. depth
@@ -46,21 +46,13 @@ my $includes_descent = 1; # non-zero => bottom time includes time for descent, z
 #                                                                                        #
 # You do not need to worry to use this option, though, because the true bottom time plus #
 # the descent time is always used when consulting the dive tables, for maximum safety.   #
-# The times for deep stops and the ascent times thereto are also included, by the way.   #
+# The times for deep stops are of course also added, by the way, if applicable.          #
 #                                                                                        #
 ##########################################################################################
 
-#############################################################################################
-#                                                                                           #
-# You do not need to worry about using this option, though, because the true bottom time    #
-# plus the descent time is always used when consulting the dive tables, for maximum safety. #
-# The times for deep stops and the ascent time to the surface are also included, of course. #
-#                                                                                           #
-#############################################################################################
+my $pressure_group = 'E'; # 'A' .. 'O'
 
-my $pressure_group = 'F'; # 'A' .. 'O'
-
-my $surface_interval = 60; # minute / 1 day = 1440 min, 2 days = 2880 min, 3 days = 4320 min / set e.g. to 5000 to disable
+my $surface_interval = 9999; # minute / 1 day = 1440 min, 2 days = 2880 min, 3 days = 4320 min / set e.g. to 5000 to disable
 
 my $tank_vol = 15; # liter
 
@@ -76,7 +68,7 @@ my $ascent_rate = 10; # meter/minute
 
 my $time_step = 1; # minute
 
-my $deep_stops = 0; # zero => disable deep stops, non-zero => enable deep stops
+my $deep_stops = 1; # zero => disable deep stops, non-zero => enable deep stops
 
 my $safety_stop = 5; # meter - set to 0 to disable
 
@@ -132,21 +124,21 @@ $ascent_rate  = 10             if ($ascent_rate  == 0);
 
 print "\n***** Dive Plan *****\n\n";
 
-printf("Maximum depth:  %3d     (m)\n", $max_depth);
-printf("Bottom time:    %3d     (min) ", $bottom_time);
+printf("Maximum Depth:  %3d     (m)\n", $max_depth);
+printf("Bottom Time:    %3d     (min) ", $bottom_time);
 print(($includes_descent?"(in":"(ex"), "cluding time for descent)\n");
-printf("Tank volume:    %3d     (l)\n", $tank_vol);
-printf("Tank pressure:  %3d     (bar)\n", $tank_pre);
+printf("Tank Volume:    %3d     (l)\n", $tank_vol);
+printf("Tank Pressure:  %3d     (bar)\n", $tank_pre);
 printf("SAC:            %3d     (l/min)\n", $sac);
-printf("Descent rate:    %6.3f (m/min)\n", $descent_rate);
-printf("Ascent rate:     %6.3f (m/min)\n", $ascent_rate);
+printf("Descent Rate:    %6.3f (m/min)\n", $descent_rate);
+printf("Ascent Rate:     %6.3f (m/min)\n", $ascent_rate);
 
 if ($factor = read_table_B($pressure_group,$surface_interval))
 {
     print ("\nRepetitive Dive:\n\n");
-    print ("Pressure group:     '$pressure_group'\n");
-    printf("Surface interval:  %4d (min)\n", $surface_interval);
-    printf("Repetition factor:  %3.1f\n", $factor);
+    print ("Pressure Group:     '$pressure_group'\n");
+    printf("Surface Interval:  %4d (min)\n", $surface_interval);
+    printf("Repetition Factor:  %3.1f\n", $factor);
 }
 else
 {
@@ -173,10 +165,18 @@ descent($max_depth);
 
 print "\nBottom:\n\n";
 
-$bottom_time -= $time if ($includes_descent);
+if ($includes_descent)
+{
+    $delta_time = $bottom_time - $time;
+    if ($delta_time > 0) { deco_stop($delta_time);         }
+    else                 { print "No bottom time left!\n"; }
+}
+else
+{
+    deco_stop($bottom_time);
+}
+$bottom_time = $time;
 
-if ($bottom_time > 0) { deco_stop($bottom_time);        }
-else                  { print "No bottom time left!\n"; }
 
 ###############
 #             #
@@ -186,7 +186,7 @@ else                  { print "No bottom time left!\n"; }
 
 if ($deep_stops)
 {
-    ($mdd,$dt,$deco) = read_table_A($max_depth,$time);
+    ($mdd,$dt,$deco) = read_table_A($max_depth,$bottom_time);
     DEEPSTOP:
     while ($deep_stops)
     {
@@ -194,8 +194,7 @@ if ($deep_stops)
         $stop = int(($depth+$first)/2+0.5);
         $delta_depth = $stop - $first;
         last DEEPSTOP if ($delta_depth < 10);
-#       ($mdd,$dt,$temp) = read_table_A($max_depth,$time+2);
-        ($mdd,$dt,$temp) = read_table_A($max_depth,$time+2+$delta_depth/$ascent_rate);
+        ($mdd,$dt,$temp) = read_table_A($max_depth,$bottom_time+2);
         if ($deco ne $temp)
         {
             $deco = $temp;
@@ -206,6 +205,7 @@ if ($deep_stops)
         ascent($stop);
         print "\nDeep Stop: 2 min \@ $stop m\n\n";
         deco_stop(2);
+        $bottom_time += 2;
     }
 }
 
@@ -215,7 +215,7 @@ if ($deep_stops)
 #                            #
 ##############################
 
-($mdd,$dt,$deco) = read_table_A($max_depth,$time); # redo in case deco recalculation led to abandonment of deep stop
+($mdd,$dt,$deco) = read_table_A($max_depth,$bottom_time); # redo in case deco recalculation led to abandonment of deep stop
 
 if ($deco->[0] or
     $deco->[1] or
@@ -269,13 +269,21 @@ print "\nFinal Ascent:\n\n";
 
 ascent(0);
 
-#########
-#       #
-# Exit: #
-#       #
-#########
+########
+#      #
+# End: #
+#      #
+########
 
-print "\nYour pressure group for MDD=$mdd and DT=$dt is now: $deco->[4]\n";
+if ($factor > 1.0)
+{
+    $time = $bottom_time * $factor;
+    print "\nYour pressure group for MDD=$mdd and DT=$dt (for $bottom_time x $factor = $time min bottom time) is now: $deco->[4]\n";
+}
+else
+{
+    print "\nYour pressure group for MDD=$mdd and DT=$dt (for $bottom_time min bottom time) is now: $deco->[4]\n";
+}
 
 print "\nEnd.\n\n";
 
@@ -370,7 +378,6 @@ sub read_table_A
     my($depth,$time) = @_;
     my($srt,$mdd,$dt);
 
-#   $time += $depth/$ascent_rate;
     $srt = $time * $factor;
     foreach $mdd (sort { $a <=> $b } keys(%Table_A))
     {
@@ -688,3 +695,6 @@ VERBATIM
     }
 }
 
+
+__END__
+:endofperl

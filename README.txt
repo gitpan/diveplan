@@ -21,12 +21,20 @@ which accompany each of the parameters and also the code itself.
 
 The script was deliberately kept simple in order to make it
 easy to adapt to other kinds of dives (e.g. multilevel dives)
-and to other ways of calculating dives (e.g. in order to
-include the ascent time in the total bottom time, or not).
+and to other ways of calculating dives (e.g. in order to include
+the ascent time to a deep stop as part of the time spent at the
+deep stop itself, which is currently not the case, or the ascent
+time to a deco stop to be part of the time spent at the deco stop,
+which slighlty reduces the time actually spent at the stop level).
 
 Also, it is still to be considered as work in progress (it doesn't
 handle multilevel dives or dives at altitude yet, for instance).
 
+License:
+
+GNU General Public License, see file "GPL.txt" in this distribution.
+
+Installation:
 
 In order to install this script, type the following commands:
 
@@ -53,7 +61,7 @@ Then proceed as follows (illustrative examples):
 
     Windows:
 
-    pl2bat diveplan C:\Windows\System32
+    pl2bat diveplan
     copy diveplan.bat C:\Windows\System32
 
 Non-UNIX and non-Windows users please refer to the documentation

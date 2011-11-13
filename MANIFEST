@@ -1,5 +1,6 @@
+GPL.txt
 MANIFEST
+META.yml
 Makefile.PL
 README.txt
 diveplan
-META.yml                                 Module meta-data (added by MakeMaker)
