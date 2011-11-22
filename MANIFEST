@@ -1,6 +1,7 @@
-GPL.txt
+Artistic.txt
+GNU_GPL.txt
 MANIFEST
 META.yml
 Makefile.PL
 README.txt
-diveplan
+diveplan.cgi
