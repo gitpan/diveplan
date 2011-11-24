@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME      => 'diveplan',
-    VERSION   => '2.0.0',
+    VERSION   => '2.1.0',
     EXE_FILES => ['diveplan.cgi'],
     'dist'    => { COMPRESS => "gzip -9", SUFFIX => "gz" }
 );

@@ -4,9 +4,9 @@
 ##                                                                           ##
 ##    DIVE PLAN CALCULATOR                                                   ##
 ##                                                                           ##
-##    Version 2.0.0                                                          ##
+##    Version 2.1.0                                                          ##
 ##                                                                           ##
-##    Released 2011-11-22                                                    ##
+##    Released 2011-11-24                                                    ##
 ##                                                                           ##
 ##    Copyright (C) 2011 by Steffen Beyer.                                   ##
 ##    All rights reserved.                                                   ##
@@ -51,7 +51,7 @@ my $descent_rate = 10; # meter/minute
 
 my $ascent_rate = 10; # meter/minute
 
-my $deep_stops = 1; # zero => disable deep stops, non-zero => enable deep stops
+my $deep_stops = 0; # zero => disable deep stops, non-zero => enable deep stops
 
 my $safety_stop = 5; # meter - set to 0 to disable
 
@@ -92,6 +92,8 @@ my $footer = <<'VERBATIM';
 VERBATIM
 
 my $show_tables = 0;
+
+my $dive_time = 0;
 
 my $plan = '';
 
@@ -141,6 +143,8 @@ $inc_flag[($includes_descent ? 1 : 0)] = $checked;
 $deep_flag = $checked if ($deep_stops);
 
 $rep_flag = $checked if ($repetitive_dive);
+
+$dive_time = $bottom_time;
 
 init_table_A();
 init_table_Aa();
@@ -656,7 +660,7 @@ VERBATIM
 ${header}
                                       Table Aa:
 
-MDD   DT    A    B    C    D    E    F    G    H    I    J    K    L    M    N    O
+MDD  NDL    A    B    C    D    E    F    G    H    I    J    K    L    M    N    O
 ${text}${footer}
 VERBATIM
         return;
@@ -838,7 +842,7 @@ sub process_query_string
             {
                 if ($val ne '' and $val =~ m!^[0-9]*\.?[0-9]*$!) { $bottom_time = $val + 0; }
             }
-            elsif ($var eq 'IN' or $var eq 'INC')
+            elsif ($var eq 'IN')
             {
                 if ($val =~ m!^[0-9]+$!) { $includes_descent = $val ? 1 : 0; }
             }
@@ -862,19 +866,19 @@ sub process_query_string
             {
                 if ($val ne '' and $val =~ m!^[0-9]*\.?[0-9]*$!) { $ascent_rate = $val + 0; }
             }
-            elsif ($var eq 'DS' or $var eq 'DEEP')
+            elsif ($var eq 'DS')
             {
                 if ($val =~ m!^[0-9]+$!) { $deep_stops = $val ? 1 : 0; }
             }
-            elsif ($var eq 'SS' or $var eq 'SFTY')
+            elsif ($var eq 'SS')
             {
                 if ($val ne '' and $val =~ m!^[0-9]*\.?[0-9]*$!) { $safety_stop = $val + 0; }
             }
-            elsif ($var eq 'GR' or $var eq 'STEP')
+            elsif ($var eq 'GR')
             {
                 if ($val ne '' and $val =~ m!^[0-9]*\.?[0-9]*$!) { $time_step = $val + 0; }
             }
-            elsif ($var eq 'RD' or $var eq 'REP')
+            elsif ($var eq 'RD')
             {
                 if ($val =~ m!^[0-9]+$!) { $repetitive_dive = $val ? 1 : 0; }
             }
@@ -904,6 +908,16 @@ Content-type: text/html; charset="iso-8859-1"
 <HEAD>
     <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
     <TITLE>Steffen Beyer's Dive Plan Calculator</TITLE>
+
+<script type="text/javascript">
+function grayout()
+{
+    DivePlan.PG.disabled = !DivePlan.RD.checked;
+    DivePlan.SI.disabled = !DivePlan.RD.checked;
+}
+onload = grayout;
+</script>
+
 </HEAD>
 <BODY BGCOLOR="#FFFFFF" BACKGROUND="/~sb/layout/img/udjat.gif">
 <CENTER>
@@ -931,7 +945,7 @@ than most other diving tables.
 
 <TABLE BGCOLOR="#E0E0E0" CELLSPACING="1" CELLPADDING="7" BORDER="2">
 
-<FORM METHOD="GET" ACTION="">
+<FORM NAME="DivePlan" METHOD="GET" ACTION="">
 
 <TR>
 <TD VALIGN="middle" ALIGN="right" ><B>PARAMETER</B></TD>
@@ -952,7 +966,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Bottom Time:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="BT" VALUE="$bottom_time"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="BT" VALUE="$dive_time"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >min</TD>
 <TD VALIGN="middle" ALIGN="left"  >
@@ -966,6 +980,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Tank Volume:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="TV" VALUE="$tank_vol"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >l</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 </TR>
@@ -974,6 +989,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Tank Pressure:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="TP" VALUE="$tank_pre"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >bar</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 </TR>
@@ -982,6 +998,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >SAC Rate:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="SAC" VALUE="$sac"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >l/min</TD>
 <TD VALIGN="middle" ALIGN="left"  >(&quot;Surface Air Consumption&quot;)</TD>
 </TR>
@@ -990,6 +1007,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Descent Rate:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="DR" VALUE="$descent_rate"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >m/min</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 </TR>
@@ -998,6 +1016,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Ascent Rate:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="AR" VALUE="$ascent_rate"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >m/min</TD>
 <TD VALIGN="middle" ALIGN="left"  >(&lt;= 10 m/min)</TD>
 </TR>
@@ -1006,6 +1025,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Deep Stops:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="checkbox" NAME="DS" VALUE="1"$deep_flag></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 <TD VALIGN="middle" ALIGN="left"  >(Use &quot;Pyle&quot; stops)</TD>
 </TR>
@@ -1014,6 +1034,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Safety Stop:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="SS" VALUE="$safety_stop"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >m</TD>
 <TD VALIGN="middle" ALIGN="left"  >(Set to 0 to disable)</TD>
 </TR>
@@ -1022,6 +1043,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Time Increments:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="GR" VALUE="$time_step"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >min</TD>
 <TD VALIGN="middle" ALIGN="left"  >(Granularity)</TD>
 </TR>
@@ -1029,7 +1051,8 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Repetitive Dive:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="checkbox" NAME="RD" VALUE="1"$rep_flag></INPUT>
+    <INPUT TYPE="checkbox" NAME="RD" VALUE="1"$rep_flag onchange="grayout()"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 </TR>
@@ -1038,6 +1061,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Pressure Group:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="PG" VALUE="$pressure_group"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 <TD VALIGN="middle" ALIGN="left"  >[A..O]</TD>
 </TR>
@@ -1046,6 +1070,7 @@ than most other diving tables.
 <TD VALIGN="middle" ALIGN="right" >Surface Interval:</TD>
 <TD VALIGN="middle" ALIGN="center">
     <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="SI" VALUE="$surface_interval"></INPUT>
+</TD>
 <TD VALIGN="middle" ALIGN="left"  >min</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 </TR>
@@ -1064,7 +1089,7 @@ than most other diving tables.
 
 </FORM>
 
-<FORM METHOD="GET" ACTION="">
+<FORM NAME="DiveTables" METHOD="GET" ACTION="">
 <TR>
 <TD VALIGN="middle" ALIGN="center" COLSPAN="4">
     <INPUT TYPE="hidden" NAME="show" VALUE="tables"></INPUT>
@@ -1089,7 +1114,7 @@ VERBATIM
     {
         print <<"VERBATIM";
 ${header}${plan}${footer}
-<A HREF="diveplan.txt">Download this dive plan</A>
+<A HREF="${diveplan}">Download this dive plan</A>
 <P>
 VERBATIM
     }
