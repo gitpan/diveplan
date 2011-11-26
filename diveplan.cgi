@@ -1,20 +1,20 @@
 #!/v/guest/sw/bin/perl -w
 
-###############################################################################
-##                                                                           ##
-##    DIVE PLAN CALCULATOR                                                   ##
-##                                                                           ##
-##    Version 2.1.0                                                          ##
-##                                                                           ##
-##    Released 2011-11-24                                                    ##
-##                                                                           ##
-##    Copyright (C) 2011 by Steffen Beyer.                                   ##
-##    All rights reserved.                                                   ##
-##                                                                           ##
-##    This program is free software; you can redistribute it                 ##
-##    and/or modify it under the same terms as Perl itself.                  ##
-##                                                                           ##
-###############################################################################
+##################################################################
+##                                                              ##
+##    DIVE PLAN CALCULATOR                                      ##
+##                                                              ##
+##    Version 2.1.1                                             ##
+##                                                              ##
+##    Released 2011-11-26                                       ##
+##                                                              ##
+##    Copyright (C) 2011 by Steffen Beyer.                      ##
+##    All rights reserved.                                      ##
+##                                                              ##
+##    This program is free software; you can redistribute it    ##
+##    and/or modify it under the same terms as Perl itself.     ##
+##                                                              ##
+##################################################################
 
 ##################################################################
 #                                                                #
@@ -97,10 +97,9 @@ my $dive_time = 0;
 
 my $plan = '';
 
-my $tank = $tank_vol * $tank_pre; # liter * bar = surface liter
-
 my $depth = 0;
 my $time = 0;
+my $tank = 0;
 my $air = 0;
 
 my $delta_depth = 0;
@@ -145,6 +144,8 @@ $deep_flag = $checked if ($deep_stops);
 $rep_flag = $checked if ($repetitive_dive);
 
 $dive_time = $bottom_time;
+
+$tank = $tank_vol * $tank_pre; # liter * bar = surface liter
 
 init_table_A();
 init_table_Aa();
