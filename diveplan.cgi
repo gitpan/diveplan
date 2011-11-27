@@ -4,9 +4,9 @@
 ##                                                              ##
 ##    DIVE PLAN CALCULATOR                                      ##
 ##                                                              ##
-##    Version 2.1.1                                             ##
+##    Version 2.2.0                                             ##
 ##                                                              ##
-##    Released 2011-11-26                                       ##
+##    Released 2011-11-27                                       ##
 ##                                                              ##
 ##    Copyright (C) 2011 by Steffen Beyer.                      ##
 ##    All rights reserved.                                      ##
@@ -255,7 +255,11 @@ sub calculate_plan
             $delta_depth = $stop - $first;
             last DEEPSTOP if ($delta_depth < 10);
             ($mdd,$dt,$temp) = read_table_A($max_depth,$bottom_time+2);
-            if ($deco ne $temp)
+            if (($deco->[0] != $temp->[0])
+            or  ($deco->[1] != $temp->[1])
+            or  ($deco->[2] != $temp->[2])
+            or  ($deco->[3] != $temp->[3])
+            or  ($deco->[4] ne $temp->[4]))
             {
                 $deco = $temp;
                 store("\nA deep stop requires the recalculation of necessary deco stops.\n");
@@ -445,9 +449,31 @@ sub storeline
 sub read_table_A
 {
     my($depth,$time) = @_;
-    my($srt,$mdd,$dt);
+    my($srt,$mdd,$dt,$ndl,$group,$loop);
 
     $srt = $time * $factor;
+    NODECO:
+    foreach $mdd (sort { $a <=> $b } keys(%Table_Aa))
+    {
+        if ($mdd >= $depth)
+        {
+            $ndl = $Table_Aa{$mdd}[0];
+            if (($ndl == 0) or ($ndl >= $srt))
+            {
+                $group = 'A';
+                foreach $loop (1..15)
+                {
+                    $dt = $Table_Aa{$mdd}[$loop];
+                    if (($dt > 0) and ($dt >= $srt))
+                    {
+                        return($mdd,$dt,[0,0,0,0,$group]);
+                    }
+                    $group++;
+                }
+            }
+            last NODECO;
+        }
+    }
     foreach $mdd (sort { $a <=> $b } keys(%Table_A))
     {
         if ($mdd >= $depth)
