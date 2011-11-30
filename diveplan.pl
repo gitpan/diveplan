@@ -4,9 +4,9 @@
 ##                                                              ##
 ##    DIVE PLAN CALCULATOR                                      ##
 ##                                                              ##
-##    Version 2.2.0                                             ##
+##    Version 3.0.1                                             ##
 ##                                                              ##
-##    Released 2011-11-27                                       ##
+##    Released 2011-11-30                                       ##
 ##                                                              ##
 ##    Copyright (C) 2011 by Steffen Beyer.                      ##
 ##    All rights reserved.                                      ##
@@ -27,11 +27,21 @@
 
 use strict;
 
+############################
+#                          #
+# Configuration constants: #
+#                          #
+############################
+
+my $default_safety_stop_depth = 5;
+
+my $default_safety_stop_time = 3;
+
+my $default_deep_stop_time = 2;
+
 #############################
 #                           #
-# Configuration parameters: #
-#                           #
-#     (Default values)      #
+# Parameter default values: #
 #                           #
 #############################
 
@@ -53,7 +63,7 @@ my $ascent_rate = 10; # meter/minute
 
 my $deep_stops = 0; # zero => disable deep stops, non-zero => enable deep stops
 
-my $safety_stop = 5; # meter - set to 0 to disable
+my $safety_stop = $default_safety_stop_depth; # meter - set to 0 to disable
 
 my $time_step = 1; # minute
 
@@ -63,15 +73,15 @@ my $pressure_group = 'A'; # 'A' .. 'O'
 
 my $surface_interval = 60; # minute / 1 day = 1440 min, 2 days = 2880 min, 3 days = 4320 min / set e.g. to 5000 to disable
 
-my $factor = 1.0;
-
 #####################
 #                   #
-# Global variables: #
+# Global constants: #
 #                   #
 #####################
 
 my $diveplan = 'diveplan.txt';
+
+my $checked = ' CHECKED';
 
 my $header = <<'VERBATIM';
 <TABLE BGCOLOR="#FFFFFF" CELLSPACING="1" CELLPADDING="7" BORDER="2">
@@ -91,23 +101,22 @@ my $footer = <<'VERBATIM';
 <P>
 VERBATIM
 
+#####################
+#                   #
+# Global variables: #
+#                   #
+#####################
+
+my $mandatory_stop = 0;
 my $show_tables = 0;
-
-my $dive_time = 0;
-
+my $save_time = 0;
 my $plan = '';
 
+my $delta_air = 0;
 my $depth = 0;
 my $time = 0;
 my $tank = 0;
 my $air = 0;
-
-my $delta_depth = 0;
-my $delta_time  = 0;
-my $delta_air   = 0;
-my $new_depth   = 0;
-
-my($mdd,$dt,$deco,$temp,$first,$stop);
 
 my(%Table_A)  = ();
 my(%Table_Aa) = ();
@@ -117,7 +126,6 @@ my(%Table_C)  = ();
 my(@Table_B_lo) = ();
 my(@Table_B_hi) = ();
 
-my $checked = ' CHECKED';
 my(@inc_flag) = ('', '');
 my $deep_flag = '';
 my $rep_flag = '';
@@ -129,6 +137,8 @@ my $rep_flag = '';
 ###################
 
 process_query_string();
+
+$mandatory_stop = $safety_stop || $default_safety_stop_depth;
 
 $descent_rate = -$descent_rate if ($descent_rate <  0);
 $descent_rate = 10             if ($descent_rate == 0);
@@ -143,7 +153,7 @@ $deep_flag = $checked if ($deep_stops);
 
 $rep_flag = $checked if ($repetitive_dive);
 
-$dive_time = $bottom_time;
+$save_time = $bottom_time;
 
 $tank = $tank_vol * $tank_pre; # liter * bar = surface liter
 
@@ -180,6 +190,8 @@ print_page();
 
 sub calculate_plan
 {
+    my($factor,$delta_time,$mdd,$dt,$deco,$first,$stop,$temp,$pgdisp,$pgtemp);
+
     store ("\n                         ***** Dive Plan *****\n\n");
     storef("Maximum Depth:  %3d     (m)\n", $max_depth);
     storef("Bottom Time:    %3d     (min) ", $bottom_time);
@@ -190,9 +202,10 @@ sub calculate_plan
     storef("Descent Rate:    %6.3f (m/min)\n", $descent_rate);
     storef("Ascent Rate:     %6.3f (m/min)\n", $ascent_rate);
 
+    $factor = 1.0;
     if ($repetitive_dive)
     {
-        if ($factor = read_table_B($pressure_group,$surface_interval))
+        if ($factor = get_rep_factor($pressure_group,$surface_interval))
         {
             store ("\nRepetitive Dive:\n\n");
             store ("Pressure Group:     '$pressure_group'\n");
@@ -229,12 +242,12 @@ sub calculate_plan
     if ($includes_descent)
     {
         $delta_time = $bottom_time - $time;
-        if ($delta_time > 0) { deco_stop($delta_time);          }
+        if ($delta_time > 0) { make_stop($delta_time);          }
         else                 { store("No bottom time left!\n"); }
     }
     else
     {
-        deco_stop($bottom_time);
+        make_stop($bottom_time);
     }
     $bottom_time = $time;
 
@@ -244,32 +257,21 @@ sub calculate_plan
     #             #
     ###############
 
+    ($mdd,$dt,$deco) = get_deco_stops($max_depth,$bottom_time,$factor);
+
     if ($deep_stops)
     {
-        ($mdd,$dt,$deco) = read_table_A($max_depth,$bottom_time);
-        DEEPSTOP:
-        while ($deep_stops)
+        $first = get_first_stop($deco);
+        while (($depth - $first) > 10)
         {
-            $first = ($deco->[0]?12:0) || ($deco->[1]?9:0) || ($deco->[2]?6:0) || ($deco->[3]?3:0) || $safety_stop;
+            ($mdd,$dt,$deco) = get_deco_stops($max_depth,$bottom_time+$default_deep_stop_time,$factor);
+            $first = get_first_stop($deco);
             $stop = int(($depth+$first)/2+0.5);
-            $delta_depth = $stop - $first;
-            last DEEPSTOP if ($delta_depth < 10);
-            ($mdd,$dt,$temp) = read_table_A($max_depth,$bottom_time+2);
-            if (($deco->[0] != $temp->[0])
-            or  ($deco->[1] != $temp->[1])
-            or  ($deco->[2] != $temp->[2])
-            or  ($deco->[3] != $temp->[3])
-            or  ($deco->[4] ne $temp->[4]))
-            {
-                $deco = $temp;
-                store("\nA deep stop requires the recalculation of necessary deco stops.\n");
-                next DEEPSTOP;
-            }
             store("\nAscent:\n\n");
             ascent($stop);
-            store("\nDeep Stop: 2 min \@ $stop m\n\n");
-            deco_stop(2);
-            $bottom_time += 2;
+            store("\nDeep Stop: $default_deep_stop_time min \@ $stop m\n\n");
+            make_stop($default_deep_stop_time);
+            $bottom_time += $default_deep_stop_time;
         }
     }
 
@@ -279,48 +281,54 @@ sub calculate_plan
     #                            #
     ##############################
 
-    ($mdd,$dt,$deco) = read_table_A($max_depth,$bottom_time); # redo in case deco recalculation led to abandonment of deep stop
-
     if ($deco->[0] or
         $deco->[1] or
         $deco->[2] or
-        $deco->[3])
+        $deco->[3] or
+        $deco->[4])
     {
         if ($deco->[0])
         {
             store("\nAscent:\n\n");
             ascent(12);
             store("\nDeco Stop: $deco->[0] min \@ 12 m\n\n");
-            deco_stop($deco->[0]);
+            make_stop($deco->[0]);
         }
         if ($deco->[1])
         {
             store("\nAscent:\n\n");
             ascent(9);
             store("\nDeco Stop: $deco->[1] min \@ 9 m\n\n");
-            deco_stop($deco->[1]);
+            make_stop($deco->[1]);
         }
         if ($deco->[2])
         {
             store("\nAscent:\n\n");
             ascent(6);
             store("\nDeco Stop: $deco->[2] min \@ 6 m\n\n");
-            deco_stop($deco->[2]);
+            make_stop($deco->[2]);
         }
         if ($deco->[3])
         {
             store("\nAscent:\n\n");
             ascent(3);
             store("\nDeco Stop: $deco->[3] min \@ 3 m\n\n");
-            deco_stop($deco->[3]);
+            make_stop($deco->[3]);
+        }
+        if ($deco->[4])
+        {
+            store("\nAscent:\n\n");
+            ascent($mandatory_stop);
+            store("\nMandatory Safety Stop: $default_safety_stop_time min \@ $mandatory_stop m\n\n");
+            make_stop($default_safety_stop_time);
         }
     }
     elsif ($safety_stop)
     {
         store("\nAscent:\n\n");
         ascent($safety_stop);
-        store("\nSafety Stop: 3 min \@ $safety_stop m\n\n");
-        deco_stop(3);
+        store("\nSafety Stop: $default_safety_stop_time min \@ $safety_stop m\n\n");
+        make_stop($default_safety_stop_time);
     }
 
     #################
@@ -339,32 +347,31 @@ sub calculate_plan
     #      #
     ########
 
+    $pgdisp = $pgtemp = $deco->[5];
+
     if ($repetitive_dive)
     {
-        if (ord($deco->[4]) < ($temp = ord($pressure_group) + 1))
+        if (($surface_interval < 360) and (ord($pgdisp) < ($temp = ord($pressure_group) + 1)))
         {
-            $temp = chr($temp);
-            $deco->[4] = "$temp ($deco->[4] => ${pressure_group}+1)";
-            $pressure_group = $temp;
+            $pgtemp = chr($temp);
+            $pgdisp = "$pgtemp ($deco->[5] => ${pressure_group}+1)";
         }
-        else
-        {
-            $pressure_group = $deco->[4];
-        }
-        $time = $bottom_time * $factor;
-        store("\nYour pressure group for MDD=$mdd and DT=$dt (for $bottom_time x $factor = $time min bottom time) is now: $deco->[4]\n");
+        $temp = $bottom_time * $factor;
+        store("\nYour pressure group for MDD=$mdd and DT=$dt (for $bottom_time x $factor = $temp min bottom time) is now: $pgdisp\n");
     }
     else
     {
-        $pressure_group = $deco->[4];
-        store("\nYour pressure group for MDD=$mdd and DT=$dt (for $bottom_time min bottom time) is now: $deco->[4]\n");
+        store("\nYour pressure group for MDD=$mdd and DT=$dt (for $bottom_time min bottom time) is now: $pgdisp\n");
     }
+    $pressure_group = $pgtemp;
     store("\nEnd.\n");
 }
 
 sub descent
 {
     my($stop_depth) = shift;
+    my($delta_time,$delta_depth,$new_depth);
+
     while ($depth < $stop_depth) # descent
     {
         $delta_time = $time_step;
@@ -385,11 +392,12 @@ sub descent
     }
 }
 
-sub deco_stop
+sub make_stop
 {
     my($stop_time) = shift;
-    my $acc_time = 0;
-    my $new_time = 0;
+    my($acc_time,$delta_time,$new_time);
+
+    $acc_time = 0;
     while ($acc_time < $stop_time)
     {
         $delta_time = $time_step;
@@ -411,6 +419,8 @@ sub deco_stop
 sub ascent
 {
     my($stop_depth) = shift;
+    my($delta_time,$delta_depth,$new_depth);
+
     while ($depth > $stop_depth) # ascent
     {
         $delta_time = $time_step;
@@ -446,19 +456,65 @@ sub storeline
     storef("Time: %2d (min) Depth: %2d (m) Air: %3d (l) Total: %4d (l) Tank: %3d (bar)\n", int($time+0.5), int($depth+0.5), int($delta_air+0.5), int($air+0.5), int(($tank/$tank_vol)+0.5));
 }
 
-sub read_table_A
+sub get_rep_factor
 {
-    my($depth,$time) = @_;
-    my($srt,$mdd,$dt,$ndl,$group,$loop);
+    my($group,$interval) = @_;
+    my($loop);
 
-    $srt = $time * $factor;
+    if ($interval < $Table_B_lo[0])
+    {
+        die "\n\nThis is not a repetitive dive, but a continuation of a previous one (surface interval of $interval min < $Table_B_lo[0] min)!\n";
+    }
+    if ($interval > $Table_B_hi[10])
+    {
+        return 0.0; # surface interval lies outside of the table, this is no repetitive dive but a new one
+    }
+    foreach $loop (0..10)
+    {
+        if ($interval >= $Table_B_lo[$loop] and $interval <= $Table_B_hi[$loop])
+        {
+            return     $Table_B{$group}[$loop]
+            if (exists($Table_B{$group})               and
+               defined($Table_B{$group})               and
+                   ref($Table_B{$group}) eq 'ARRAY'    and
+               defined($Table_B{$group}[$loop])        and
+                      ($Table_B{$group}[$loop] >= 1.0) and
+                      ($Table_B{$group}[$loop] <= 2.0));
+            die "\n\nNo valid entry found in dive table B for pressure group '$group' and interval \[$Table_B_lo[$loop]..$Table_B_hi[$loop]\] min (for $interval min)!\n";
+        }
+    }
+    die "\n\nNo valid entry found in dive table B for pressure group '$group' and $interval min surface interval!\n";
+}
+
+sub get_deco_stops
+{
+    my($depth,$time,$factor) = @_;
+    my($srt,$mandatory,$mdd,$dt,$ndl,$group,$loop);
+
+    $srt = $time;
+    $mandatory = 0;
+    if ($repetitive_dive and ($factor > 1.0))
+    {
+        $srt = $time * $factor;
+        $mandatory = 1;
+        NDL:
+        foreach $mdd (sort { $a <=> $b } keys(%Table_C))
+        {
+            if ($mdd >= $depth)
+            {
+                $mandatory = 0 if (exists($Table_C{$mdd}{$factor}) and defined($Table_C{$mdd}{$factor}) and ($time < $Table_C{$mdd}{$factor}));
+                last NDL;
+            }
+        }
+    }
     NODECO:
     foreach $mdd (sort { $a <=> $b } keys(%Table_Aa))
     {
         if ($mdd >= $depth)
         {
             $ndl = $Table_Aa{$mdd}[0];
-            if (($ndl == 0) or ($ndl >= $srt))
+            $ndl = 720 if (($ndl == 0) and ($mdd == 6));
+            if ($ndl >= $srt)
             {
                 $group = 'A';
                 foreach $loop (1..15)
@@ -466,7 +522,7 @@ sub read_table_A
                     $dt = $Table_Aa{$mdd}[$loop];
                     if (($dt > 0) and ($dt >= $srt))
                     {
-                        return($mdd,$dt,[0,0,0,0,$group]);
+                        return($mdd,$dt,[0,0,0,0,$mandatory,$group]);
                     }
                     $group++;
                 }
@@ -496,6 +552,12 @@ sub read_table_A
         }
     }
     die "\n\nCould not find the depth of $depth m in dive table A!\n";
+}
+
+sub get_first_stop
+{
+    my($deco) = shift;
+    return( ($deco->[0]?12:0) || ($deco->[1]?9:0) || ($deco->[2]?6:0) || ($deco->[3]?3:0) || ($deco->[4]?$mandatory_stop:0) || $safety_stop );
 }
 
 sub init_table_A
@@ -649,7 +711,7 @@ VERBATIM
         $line =~ s/\s+$//;
         next DECO if $line eq '';
         ($depth,$time,$deco12,$deco9,$deco6,$deco3,$group) = split(' ', $line);
-        $line = [$deco12,$deco9,$deco6,$deco3,$group];
+        $line = [$deco12,$deco9,$deco6,$deco3,0,$group];
         foreach $loop (0..3) { $line->[$loop] = 0 unless $line->[$loop] =~ /^\d+$/ }
         $Table_A{$depth}{$time} = $line;
     }
@@ -704,37 +766,6 @@ VERBATIM
         foreach $loop (0..15) { $line->[$loop] = 0 unless $line->[$loop] =~ /^\d+$/ }
         $Table_Aa{$depth} = $line;
     }
-}
-
-sub read_table_B
-{
-    my($group,$interval) = @_;
-    my($loop);
-
-    if ($interval < $Table_B_lo[0])
-    {
-        die "\n\nThis is not a repetitive dive, but a continuation of a previous one (surface interval of $interval min < $Table_B_lo[0] min)!\n";
-    }
-    foreach $loop (0..10)
-    {
-        if ($interval >= $Table_B_lo[$loop] and $interval <= $Table_B_hi[$loop])
-        {
-            if (exists($Table_B{$group})               and
-               defined($Table_B{$group})               and
-                   ref($Table_B{$group}) eq 'ARRAY'    and
-               defined($Table_B{$group}[$loop])        and
-                      ($Table_B{$group}[$loop] >= 1.0) and
-                      ($Table_B{$group}[$loop] <= 2.0))
-            {
-                return $Table_B{$group}[$loop];
-            }
-            else
-            {
-                die "\n\nNo valid entry found in dive table B for pressure group '$group' and interval \[$Table_B_lo[$loop]..$Table_B_hi[$loop]\] min (for $interval min)!\n";
-            }
-        }
-    }
-    return 0.0; # surface interval lies outside of the table, this is no repetitive dive but a new one
 }
 
 sub init_table_B
@@ -834,13 +865,13 @@ ${text}${footer}
 VERBATIM
         return;
     }
-    NULLTIME:
+    LIMIT:
     foreach $item (split(/[\r\n]+/, $text))
     {
         $line = $item;
         $line =~ s/^\s+//;
         $line =~ s/\s+$//;
-        next NULLTIME if $line eq '';
+        next LIMIT if $line eq '';
         ($depth,@list) = split(' ', $line);
         foreach $loop (0..9)
         {
@@ -852,13 +883,16 @@ VERBATIM
 sub process_query_string
 {
     my $query = $ENV{'QUERY_STRING'} || $ENV{'REDIRECT_QUERY_STRING'} || '';
-    my @pairs = split(/&/, $query);
+    my(@pairs) = split(/&/, $query);
     my($pair,$var,$val);
 
     foreach $pair (@pairs)
     {
         ($var,$val) = split(/=/,$pair,2);
-        $var = uc($var);
+        $var =~ s!\+! !g; $var =~ s!%([a-fA-F0-9][a-fA-F0-9])!pack("C", hex($1))!eg;
+        $val =~ s!\+! !g; $val =~ s!%([a-fA-F0-9][a-fA-F0-9])!pack("C", hex($1))!eg;
+        $var =~ s!^\s+!!; $var =~ s!\s+$!!; $var = uc($var);
+        $val =~ s!^\s+!!; $val =~ s!\s+$!!; $val = uc($val);
         if ($var =~ m!^[A-Z]+$!)
         {
             if    ($var eq 'MD' or $var eq 'MDD')
@@ -916,12 +950,14 @@ sub process_query_string
             }
             elsif ($var eq 'SI')
             {
-                if ($val ne '' and $val =~ m!^[0-9]*\.?[0-9]*$!) { $surface_interval = $val + 0; }
+                if ($val ne '')
+                {
+                    if    ($val =~ m!^[0-9]*\.?[0-9]*$!)       { $surface_interval = $val + 0;     }
+                    elsif ($val =~ m!^([0-9]+):$!)             { $surface_interval = $1 * 60;      }
+                    elsif ($val =~ m!^([0-9]+):([0-5][0-9])$!) { $surface_interval = $1 * 60 + $2; }
+                }
             }
-            elsif ($var eq 'SHOW')
-            {
-                if (uc($val) eq 'TABLES') { $show_tables = 1; }
-            }
+            elsif (($var eq 'SHOW') and ($val eq 'TABLES')) { $show_tables = 1; }
         }
     }
 }
@@ -984,7 +1020,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Maximum Depth:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="MD" VALUE="$max_depth"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="MD" VALUE="$max_depth"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >m</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
@@ -993,7 +1029,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Bottom Time:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="BT" VALUE="$dive_time"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="BT" VALUE="$save_time"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >min</TD>
 <TD VALIGN="middle" ALIGN="left"  >
@@ -1006,7 +1042,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Tank Volume:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="TV" VALUE="$tank_vol"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="TV" VALUE="$tank_vol"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >l</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
@@ -1015,7 +1051,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Tank Pressure:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="TP" VALUE="$tank_pre"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="TP" VALUE="$tank_pre"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >bar</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
@@ -1024,7 +1060,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >SAC Rate:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="SAC" VALUE="$sac"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="SAC" VALUE="$sac"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >l/min</TD>
 <TD VALIGN="middle" ALIGN="left"  >(&quot;Surface Air Consumption&quot;)</TD>
@@ -1033,7 +1069,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Descent Rate:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="DR" VALUE="$descent_rate"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="DR" VALUE="$descent_rate"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >m/min</TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
@@ -1042,7 +1078,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Ascent Rate:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="AR" VALUE="$ascent_rate"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="AR" VALUE="$ascent_rate"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >m/min</TD>
 <TD VALIGN="middle" ALIGN="left"  >(&lt;= 10 m/min)</TD>
@@ -1060,7 +1096,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Safety Stop:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="SS" VALUE="$safety_stop"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="SS" VALUE="$safety_stop"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >m</TD>
 <TD VALIGN="middle" ALIGN="left"  >(Set to 0 to disable)</TD>
@@ -1069,7 +1105,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Time Increments:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="GR" VALUE="$time_step"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="GR" VALUE="$time_step"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >min</TD>
 <TD VALIGN="middle" ALIGN="left"  >(Granularity)</TD>
@@ -1087,7 +1123,7 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Pressure Group:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="PG" VALUE="$pressure_group"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="PG" VALUE="$pressure_group"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
 <TD VALIGN="middle" ALIGN="left"  >[A..O]</TD>
@@ -1096,10 +1132,10 @@ than most other diving tables.
 <TR>
 <TD VALIGN="middle" ALIGN="right" >Surface Interval:</TD>
 <TD VALIGN="middle" ALIGN="center">
-    <INPUT TYPE="text" SIZE="4" MAXLENGTH="4" NAME="SI" VALUE="$surface_interval"></INPUT>
+    <INPUT TYPE="text" SIZE="4" MAXLENGTH="6" NAME="SI" VALUE="$surface_interval"></INPUT>
 </TD>
 <TD VALIGN="middle" ALIGN="left"  >min</TD>
-<TD VALIGN="middle" ALIGN="left"  >&nbsp;</TD>
+<TD VALIGN="middle" ALIGN="left"  >or HH:MM</TD>
 </TR>
 
 <TR>
@@ -1141,13 +1177,15 @@ VERBATIM
     {
         print <<"VERBATIM";
 ${header}${plan}${footer}
-<A HREF="${diveplan}">Download this dive plan</A>
+<A TARGET="_blank" HREF="${diveplan}">Download this dive plan</A>
 <P>
 VERBATIM
     }
 
     print <<"VERBATIM";
-<A HREF="diveplan.pl">Download this software</A>
+<A TARGET="_blank" HREF="diveplan.pl">Download this software</A>
+<P>
+Download <A TARGET="_blank" HREF="Handleiding_NOB_Sportduiktabellen.pdf">Handleiding NOB Sportduiktabellen</A> (PDF 6.7MB)
 
 <P>
 <HR NOSHADE SIZE="2">

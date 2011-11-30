@@ -21,7 +21,7 @@ in this distribution.
 
 Installation:
 
-Copy the CGI script "diveplan.cgi" to a location where it will
+Copy the CGI script "diveplan.pl" to a location where it will
 be executed by your web server, upon request.
 
 Make sure to adapt the first line ("she-bang" line) of the script,

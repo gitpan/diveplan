@@ -4,4 +4,4 @@ MANIFEST
 META.yml
 Makefile.PL
 README.txt
-diveplan.cgi
+diveplan.pl
