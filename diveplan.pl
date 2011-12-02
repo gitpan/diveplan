@@ -1,12 +1,12 @@
-#!/v/guest/sw/bin/perl -w
+#!perl -w
 
 ##################################################################
 ##                                                              ##
 ##    DIVE PLAN CALCULATOR                                      ##
 ##                                                              ##
-##    Version 3.0.1                                             ##
+##    Version 3.1.0                                             ##
 ##                                                              ##
-##    Released 2011-11-30                                       ##
+##    Released 2011-12-02                                       ##
 ##                                                              ##
 ##    Copyright (C) 2011 by Steffen Beyer.                      ##
 ##    All rights reserved.                                      ##
@@ -261,17 +261,15 @@ sub calculate_plan
 
     if ($deep_stops)
     {
-        $first = get_first_stop($deco);
-        while (($depth - $first) > 10)
+        while (($depth - ($first = get_first_stop($deco))) >= 10)
         {
-            ($mdd,$dt,$deco) = get_deco_stops($max_depth,$bottom_time+$default_deep_stop_time,$factor);
-            $first = get_first_stop($deco);
             $stop = int(($depth+$first)/2+0.5);
             store("\nAscent:\n\n");
             ascent($stop);
             store("\nDeep Stop: $default_deep_stop_time min \@ $stop m\n\n");
             make_stop($default_deep_stop_time);
             $bottom_time += $default_deep_stop_time;
+            ($mdd,$dt,$deco) = get_deco_stops($max_depth,$bottom_time,$factor);
         }
     }
 
@@ -945,7 +943,6 @@ sub process_query_string
             }
             elsif ($var eq 'PG')
             {
-                $val = uc($val);
                 if ($val =~ m!^[A-O]$!) { $pressure_group = $val; }
             }
             elsif ($var eq 'SI')
